@@ -15,7 +15,7 @@ Audience questions + votes, moderator queue, projector view. No dependencies, no
 - **Remove poll**: back to the questions on screen and phones.
 - *Export polls CSV* saves the results.
 
-Percentages are the share of **participants** who chose each answer. With several answers allowed, the total can exceed 100%, and the screen says so. Each phone/browser counts as one participant (identity is kept even in private browsing, but two different browsers on the same phone count as two).
+Percentages are the share of **all answers given**, rounded so that they always add up to exactly 100% (with several answers allowed per person, the screen says so). The number in brackets is the raw count. Each phone/browser counts as one participant (identity is kept even in private browsing, but two different browsers on the same phone count as two).
 
 Language: French or English automatically from the phone's language. Force with `?lang=fr` or `?lang=en`.
 

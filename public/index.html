@@ -75,12 +75,12 @@ const L = {
         votes:'votes', vote:'Voter', empty:'Aucune question pour l’instant. Soyez le premier !', answered:'Répondue', anon:'Anonyme',
         sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.',
         poll:'Sondage', pollMulti:'Plusieurs réponses possibles : touchez pour cocher ou décocher, puis validez. Vous pouvez modifier votre vote tant que le sondage est ouvert.', pollSingle:'Touchez une réponse pour voter. Vous pouvez changer.', pollClosed:'Vote terminé', pollSubmit:'Valider mon vote', pollSaved:'Vote enregistré',
-        pollThanks:'Merci ! Les résultats seront affichés par l’animateur.', pollNote:'Pourcentage de participants ayant choisi chaque réponse (plusieurs réponses possibles : le total peut dépasser 100 %).' },
+        pollThanks:'Merci ! Les résultats seront affichés par l’animateur.', pollNote:'Pourcentages calculés sur l’ensemble des réponses données (plusieurs réponses possibles par personne).' },
   en: { title:'Ask the speakers', pop:'Popular', recent:'Recent', ph:'Ask your question…', name:'Your name (optional)', send:'Send',
         votes:'votes', vote:'Vote', empty:'No questions yet. Be the first!', answered:'Answered', anon:'Anonymous',
         sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.',
         poll:'Poll', pollMulti:'Several answers allowed: tap to tick or untick, then submit. You can change your vote while the poll is open.', pollSingle:'Tap an answer to vote. You can change it.', pollClosed:'Voting closed', pollSubmit:'Submit my vote', pollSaved:'Vote saved',
-        pollThanks:'Thanks! The host will show the results.', pollNote:'Percentage of participants who chose each answer (several answers allowed: the total can exceed 100%).' },
+        pollThanks:'Thanks! The host will show the results.', pollNote:'Percentages are based on all answers given (each person could choose several).' },
 };
 const qs = new URLSearchParams(location.search);
 const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
@@ -140,6 +140,16 @@ function render() {
 
 let poll = null, sel = new Set(), selFor = null;
 
+// Share of all answers given; rounded so that the total is exactly 100.
+function pcts(counts) {
+  const t = counts.reduce((a, b) => a + b, 0);
+  if (!t) return counts.map(() => 0);
+  const raw = counts.map((c) => 100 * c / t), fl = raw.map(Math.floor);
+  let rem = 100 - fl.reduce((a, b) => a + b, 0);
+  raw.map((r, i) => [r - fl[i], i]).sort((a, b) => b[0] - a[0]).forEach((x) => { if (rem-- > 0) fl[x[1]]++; });
+  return fl;
+}
+
 function renderPoll() {
   const box = $('poll'); box.textContent = '';
   if (!poll) return;
@@ -154,7 +164,7 @@ function renderPoll() {
     b.disabled = !open;
     const chosen = poll.multi ? sel.has(i) : poll.mine.includes(i);
     if (chosen) b.classList.add('on');
-    const pct = showRes && poll.voters ? Math.round(100 * poll.counts[i] / poll.voters) : 0;
+    const pct = showRes ? pcts(poll.counts)[i] : 0;
     if (showRes) { const bar = document.createElement('span'); bar.className = 'bar'; bar.style.width = pct + '%'; b.appendChild(bar); }
     const inn = document.createElement('span'); inn.className = 'in';
     const a = document.createElement('span'); a.textContent = (chosen ? '✓ ' : '') + o; inn.appendChild(a);

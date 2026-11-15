@@ -46,9 +46,9 @@ const qs = new URLSearchParams(location.search);
 const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
 const T = lang === 'fr'
   ? { h:'Posez vos questions et votez', jl:'Rejoignez sur', empty:'En attente de vos questions…', anon:'Anonyme', votes:'votes', poll:'Sondage', closed:'Vote terminé', total:'participants', voteNow:'Votez depuis votre téléphone',
-      note:'Pourcentage de participants ayant choisi chaque réponse (plusieurs réponses possibles : le total peut dépasser 100 %)' }
+      note:'Pourcentages calculés sur l’ensemble des réponses données (plusieurs réponses possibles par personne)' }
   : { h:'Ask your questions and vote', jl:'Join at', empty:'Waiting for your questions…', anon:'Anonymous', votes:'votes', poll:'Poll', closed:'Voting closed', total:'participants', voteNow:'Vote on your phone',
-      note:'Percentage of participants who chose each answer (several answers allowed: the total can exceed 100%)' };
+      note:'Percentages are based on all answers given (each person could choose several)' };
 const sortMode = qs.get('sort') === 'time' ? 'time' : 'pop';
 const maxN = Number(qs.get('n') || 6);
 const joinUrl = qs.get('url') || location.origin + '/' + (qs.get('lang') ? '?lang=' + qs.get('lang') : '');
@@ -68,13 +68,21 @@ async function load() {
     box.appendChild(el('div', 'lbl', T.poll + (p.status === 'open' ? '' : ' · ' + T.closed)));
     box.appendChild(el('h2', '', p.question));
     const reveal = p.counts !== null; // the moderator decides when results appear
+    // share of all answers given, rounded so the total is exactly 100
+    const P = (() => {
+      const c = p.counts || [], t = c.reduce((a, b) => a + b, 0);
+      if (!t) return c.map(() => 0);
+      const raw = c.map((x) => 100 * x / t), fl = raw.map(Math.floor); let rem = 100 - fl.reduce((a, b) => a + b, 0);
+      raw.map((r, i) => [r - fl[i], i]).sort((a, b) => b[0] - a[0]).forEach((x) => { if (rem-- > 0) fl[x[1]]++; });
+      return fl;
+    })();
     const n = p.options.length; // keep everything on screen, even with 8 answers
     box.style.setProperty('--rf', n <= 4 ? 'clamp(22px,3vw,40px)' : n <= 6 ? 'clamp(18px,2.4vw,32px)' : 'clamp(16px,2vw,26px)');
     box.style.setProperty('--rp', n <= 4 ? '12px' : n <= 6 ? '8px' : '5px');
     p.options.forEach((o, i) => {
       const row = el('div', 'row'); const tx = el('div', 'tx'); tx.appendChild(el('span', '', o));
       if (reveal) {
-        const pct = p.voters ? Math.round(100 * p.counts[i] / p.voters) : 0;
+        const pct = P[i];
         const fill = el('div', 'fill'); fill.style.width = pct + '%'; row.appendChild(fill);
         tx.appendChild(el('b', '', pct + '%  (' + p.counts[i] + ')'));
       }
