@@ -9,10 +9,13 @@ Audience questions + votes, moderator queue, projector view. No dependencies, no
 | `/screen` | projector | live list of the top questions, or one featured question in large type |
 
 **Polls.** At the bottom of `/mod`, *Create a poll*: a question and 2 to 8 answers (one per line), optionally allowing several answers. Then:
-- **Launch**: the poll appears at the top of every phone and takes over the projector screen with live bars. Launching another poll closes the previous one.
-- **Close voting**: results stay visible, no more votes. (Until then, people can change their vote.)
-- **Hide from screen & phones**: back to the questions.
+- **Launch**: voting opens. The poll appears at the top of every phone and on the projector (question and answers only). **Results are hidden** from the audience until you decide. Launching another poll closes the previous one.
+- **Show results on screen & phones** / **Hide results**: reveal or hide the bars at any moment, whether voting is open or closed. You always see the live counts on `/mod`.
+- **Close voting** / **Reopen voting**: stop or resume votes. While voting is open, people can change their vote (the new vote replaces the old one; with several answers allowed, tick/untick then press *Submit*).
+- **Remove poll**: back to the questions on screen and phones.
 - *Export polls CSV* saves the results.
+
+Percentages are the share of **participants** who chose each answer. With several answers allowed, the total can exceed 100%, and the screen says so. Each phone/browser counts as one participant (identity is kept even in private browsing, but two different browsers on the same phone count as two).
 
 Language: French or English automatically from the phone's language. Force with `?lang=fr` or `?lang=en`.
 

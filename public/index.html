@@ -74,23 +74,33 @@ const L = {
   fr: { title:'Questions à l’intervenant', pop:'Populaires', recent:'Récentes', ph:'Posez votre question…', name:'Votre nom (facultatif)', send:'Envoyer',
         votes:'votes', vote:'Voter', empty:'Aucune question pour l’instant. Soyez le premier !', answered:'Répondue', anon:'Anonyme',
         sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.',
-        poll:'Sondage', pollMulti:'Plusieurs réponses possibles', pollSingle:'Touchez une réponse pour voter. Vous pouvez changer.', pollClosed:'Vote terminé', pollSubmit:'Valider mon vote', pollSaved:'Vote enregistré' },
+        poll:'Sondage', pollMulti:'Plusieurs réponses possibles : touchez pour cocher ou décocher, puis validez. Vous pouvez modifier votre vote tant que le sondage est ouvert.', pollSingle:'Touchez une réponse pour voter. Vous pouvez changer.', pollClosed:'Vote terminé', pollSubmit:'Valider mon vote', pollSaved:'Vote enregistré',
+        pollThanks:'Merci ! Les résultats seront affichés par l’animateur.', pollNote:'Pourcentage de participants ayant choisi chaque réponse (plusieurs réponses possibles : le total peut dépasser 100 %).' },
   en: { title:'Ask the speakers', pop:'Popular', recent:'Recent', ph:'Ask your question…', name:'Your name (optional)', send:'Send',
         votes:'votes', vote:'Vote', empty:'No questions yet. Be the first!', answered:'Answered', anon:'Anonymous',
         sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.',
-        poll:'Poll', pollMulti:'You can select several answers', pollSingle:'Tap an answer to vote. You can change it.', pollClosed:'Voting closed', pollSubmit:'Submit my vote', pollSaved:'Vote saved' },
+        poll:'Poll', pollMulti:'Several answers allowed: tap to tick or untick, then submit. You can change your vote while the poll is open.', pollSingle:'Tap an answer to vote. You can change it.', pollClosed:'Voting closed', pollSubmit:'Submit my vote', pollSaved:'Vote saved',
+        pollThanks:'Thanks! The host will show the results.', pollNote:'Percentage of participants who chose each answer (several answers allowed: the total can exceed 100%).' },
 };
 const qs = new URLSearchParams(location.search);
 const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
 const T = L[lang] || L.en;
 document.documentElement.lang = lang;
 
-let voterId;
-try { voterId = localStorage.getItem('qa_voter'); } catch (e) {}
-if (!voterId) {
-  voterId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/-/g, '');
-  try { localStorage.setItem('qa_voter', voterId); } catch (e) {}
+// Voter identity: kept in localStorage, with cookie and sessionStorage as fallbacks
+// (some browsers / private modes block one of them), so a reload never creates a "new person".
+function readId() {
+  let v = null;
+  try { v = localStorage.getItem('qa_voter'); } catch (e) {}
+  if (!v) { const m = document.cookie.match(/(?:^|; )qa_voter=([a-z0-9]+)/); if (m) v = m[1]; }
+  if (!v) { try { v = sessionStorage.getItem('qa_voter'); } catch (e) {} }
+  return v;
 }
+let voterId = readId();
+if (!voterId) voterId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/-/g, '');
+try { localStorage.setItem('qa_voter', voterId); } catch (e) {}
+try { sessionStorage.setItem('qa_voter', voterId); } catch (e) {}
+try { document.cookie = 'qa_voter=' + voterId + '; max-age=2592000; path=/; SameSite=Lax'; } catch (e) {}
 
 const $ = (id) => document.getElementById(id);
 $('title').textContent = T.title;
@@ -134,7 +144,7 @@ function renderPoll() {
   const box = $('poll'); box.textContent = '';
   if (!poll) return;
   if (selFor !== poll.id) { sel = new Set(poll.mine); selFor = poll.id; }
-  const open = poll.status === 'open', voted = poll.mine.length > 0, showRes = voted || !open;
+  const open = poll.status === 'open', voted = poll.mine.length > 0, showRes = poll.counts !== null; // results appear only when the host reveals them
   const card = document.createElement('div'); card.className = 'poll';
   const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = T.poll + (open ? '' : ' · ' + T.pollClosed);
   const h = document.createElement('h2'); h.textContent = poll.question;
@@ -144,7 +154,7 @@ function renderPoll() {
     b.disabled = !open;
     const chosen = poll.multi ? sel.has(i) : poll.mine.includes(i);
     if (chosen) b.classList.add('on');
-    const pct = poll.voters ? Math.round(100 * poll.counts[i] / poll.voters) : 0;
+    const pct = showRes && poll.voters ? Math.round(100 * poll.counts[i] / poll.voters) : 0;
     if (showRes) { const bar = document.createElement('span'); bar.className = 'bar'; bar.style.width = pct + '%'; b.appendChild(bar); }
     const inn = document.createElement('span'); inn.className = 'in';
     const a = document.createElement('span'); a.textContent = (chosen ? '✓ ' : '') + o; inn.appendChild(a);
@@ -155,6 +165,8 @@ function renderPoll() {
     };
     card.appendChild(b);
   });
+  if (showRes && poll.multi) { const n = document.createElement('div'); n.className = 'hint'; n.textContent = T.pollNote; card.appendChild(n); }
+  if (!showRes && voted) { const n = document.createElement('div'); n.className = 'hint'; n.textContent = T.pollThanks; card.appendChild(n); }
   if (open) {
     const hint = document.createElement('div'); hint.className = 'hint';
     hint.textContent = poll.multi ? T.pollMulti : T.pollSingle; card.appendChild(hint);

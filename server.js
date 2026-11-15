@@ -14,7 +14,7 @@ const MIN_INTERVAL_MS = Number(process.env.MIN_INTERVAL_MS || 8000); // per-vote
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // ---------- state ----------
-let state = { premoderation: true, featuredId: null, questions: [], polls: [], livePollId: null };
+let state = { premoderation: true, featuredId: null, questions: [], polls: [], livePollId: null, showResults: false };
 try {
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   if (raw && Array.isArray(raw.questions)) state = Object.assign(state, raw);
@@ -77,18 +77,19 @@ function pub(q, voterId) {
 }
 // ----- polls -----
 // p.votes: { 'v_<voterId>': [optionIndex, ...] }
-function pubPoll(p, voterId) {
+// forAudience=true: counts are withheld (null) until the moderator reveals the results.
+function pubPoll(p, voterId, forAudience) {
   const counts = p.options.map(() => 0);
   let voters = 0;
   for (const arr of Object.values(p.votes)) { voters++; for (const i of arr) counts[i]++; }
   return {
     id: p.id, question: p.question, options: p.options, multi: p.multi, status: p.status,
-    counts, voters, mine: (voterId && p.votes['v_' + voterId]) || [],
+    counts: forAudience && !state.showResults ? null : counts, voters, mine: (voterId && p.votes['v_' + voterId]) || [],
   };
 }
 function livePoll(voterId) {
   const p = state.polls.find((x) => x.id === state.livePollId);
-  return p ? pubPoll(p, voterId) : null;
+  return p ? pubPoll(p, voterId, true) : null;
 }
 
 function modView(q) {
@@ -182,14 +183,14 @@ async function handle(req, res) {
       return json(res, 200, {
         premoderation: state.premoderation, featuredId: state.featuredId, connected: clients.size,
         questions: state.questions.map(modView),
-        polls: state.polls.map((x) => pubPoll(x, null)), livePollId: state.livePollId,
+        polls: state.polls.map((x) => pubPoll(x, null, false)), livePollId: state.livePollId, showResults: state.showResults,
       });
     }
     if (p === '/api/mod/export-polls.csv' && req.method === 'GET') {
       const esc = (s) => '"' + String(s).replace(/"/g, '""') + '"';
       const rows = ['poll,option,votes,total_voters'];
       for (const x of state.polls) {
-        const pp = pubPoll(x, null);
+        const pp = pubPoll(x, null, false);
         pp.options.forEach((o, i) => rows.push([esc(pp.question), esc(o), pp.counts[i], pp.voters].join(',')));
       }
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="polls.csv"' });
@@ -244,12 +245,16 @@ async function handle(req, res) {
       if (action === 'hide') {
         const live = state.polls.find((x) => x.id === state.livePollId);
         if (live && live.status === 'open') live.status = 'closed';
-        state.livePollId = null;
+        state.livePollId = null; state.showResults = false;
+      } else if (action === 'results') {
+        state.showResults = !!b.show;
       } else if (!poll) {
         return json(res, 404, { error: 'not_found' });
       } else if (action === 'launch') {
         for (const x of state.polls) if (x.status === 'open' && x.id !== poll.id) x.status = 'closed';
-        poll.status = 'open'; state.livePollId = poll.id;
+        poll.status = 'open'; state.livePollId = poll.id; state.showResults = false;
+      } else if (action === 'reopen') {
+        if (poll.id === state.livePollId) poll.status = 'open';
       } else if (action === 'close') {
         poll.status = 'closed';
       } else if (action === 'delete') {

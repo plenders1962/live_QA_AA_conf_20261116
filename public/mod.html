@@ -167,14 +167,17 @@ function renderPolls() {
     const live = data.livePollId === p.id;
     const d = el('div', 'pl');
     const h = el('div', '', p.question); h.style.fontWeight = '600';
-    if (live) h.appendChild(el('span', 'tag ' + (p.status === 'open' ? 'live' : 'closed'), p.status === 'open' ? 'LIVE · voting open' : 'on screen · voting closed'));
+    if (live) h.appendChild(el('span', 'tag ' + (p.status === 'open' ? 'live' : 'closed'),
+      (p.status === 'open' ? 'LIVE · voting open' : 'voting closed') + ' · results ' + (data.showResults ? 'SHOWN' : 'hidden')));
     else h.appendChild(el('span', 'tag', p.status === 'closed' ? 'closed' : 'draft'));
     d.appendChild(h);
     d.appendChild(el('div', 'res', p.options.map((o, i) => o + ': ' + p.counts[i]).join('   |   ') + '   —   ' + p.voters + ' voter(s)' + (p.multi ? ' (multiple answers)' : '')));
     const a = el('div', 'act');
-    if (!live || p.status !== 'open') a.appendChild(btn(p.status === 'draft' ? '▶ Launch (screen + phones)' : '▶ Launch / reopen', 'ok', () => api('/api/mod/poll/launch', { id: p.id })));
+    if (!live) a.appendChild(btn(p.status === 'draft' ? '▶ Launch (voting opens, results hidden)' : '▶ Launch again', 'ok', () => api('/api/mod/poll/launch', { id: p.id })));
+    if (live) a.appendChild(btn(data.showResults ? '📊 Hide results' : '📊 Show results on screen & phones', data.showResults ? 'on' : 'p', () => api('/api/mod/poll/results', { show: !data.showResults })));
     if (live && p.status === 'open') a.appendChild(btn('■ Close voting', 'bad', () => api('/api/mod/poll/close', { id: p.id })));
-    if (live) a.appendChild(btn('Hide from screen & phones', '', () => api('/api/mod/poll/hide', {})));
+    if (live && p.status !== 'open') a.appendChild(btn('▶ Reopen voting', 'ok', () => api('/api/mod/poll/reopen', { id: p.id })));
+    if (live) a.appendChild(btn('Remove poll (back to questions)', '', () => api('/api/mod/poll/hide', {})));
     a.appendChild(btn('Delete', '', () => api('/api/mod/poll/delete', { id: p.id })));
     d.appendChild(a); box.appendChild(d);
   });
