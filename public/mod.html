@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moderator</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1b2430; --mute:#6b7685; --acc:#2457d6; --line:#e3e7ee; --ok:#1f8a4c; --bad:#c43b3b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  #login { max-width:340px; margin:20vh auto; padding:20px; background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  input[type=password], input[type=text] { width:100%; padding:10px; font:inherit; border:1px solid var(--line); border-radius:8px; margin:8px 0; }
+  button { font:inherit; padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  button.p { background:var(--acc); color:#fff; border-color:var(--acc); }
+  button.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
+  button.bad { background:var(--bad); color:#fff; border-color:var(--bad); }
+  button.on { background:#fff3c4; border-color:#e0b800; }
+  #app { display:none; }
+  .bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  .bar .sp { flex:1; }
+  .bar a { color:var(--acc); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px; align-items:start; }
+  @media (max-width:900px) { .grid { grid-template-columns:1fr; } }
+  .col { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .col h2 { font-size:16px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+  .badge { background:var(--acc); color:#fff; border-radius:99px; padding:0 8px; font-size:13px; }
+  .q { border-top:1px solid var(--line); padding:10px 0; display:flex; gap:10px; }
+  .q:first-of-type { border-top:0; }
+  .v { min-width:38px; text-align:center; font-weight:700; font-size:18px; }
+  .v small { display:block; font-weight:400; color:var(--mute); font-size:11px; }
+  .b { flex:1; min-width:0; }
+  .t { white-space:pre-wrap; overflow-wrap:anywhere; }
+  .m { font-size:12px; color:var(--mute); margin:2px 0 6px; }
+  .act { display:flex; flex-wrap:wrap; gap:6px; }
+  .q.done .t { text-decoration:line-through; color:var(--mute); }
+  .q.feat { background:#fff9db; margin:0 -12px; padding:10px 12px; }
+  .seg button { border-radius:0; }
+  .seg button:first-child { border-radius:8px 0 0 8px; } .seg button:last-child { border-radius:0 8px 8px 0; }
+  .empty { color:var(--mute); padding:8px 0; }
+  details { margin-top:14px; } summary { cursor:pointer; color:var(--mute); }
+</style>
+</head>
+<body>
+<div id="login">
+  <h3 style="margin-top:0">Moderator</h3>
+  <input type="password" id="pw" placeholder="Password" autofocus>
+  <button class="p" id="go">Enter</button>
+  <div id="lerr" style="color:var(--bad);margin-top:8px"></div>
+</div>
+
+<div id="app">
+  <div class="bar">
+    <strong>Moderator</strong>
+    <label><input type="checkbox" id="pre"> Approve questions before they appear</label>
+    <span id="conn" style="color:var(--mute)"></span>
+    <span class="sp"></span>
+    <a href="/screen" target="_blank">Projector view ↗</a>
+    <a href="#" id="exp">Export CSV</a>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <h2>Pending <span class="badge" id="nPend">0</span></h2>
+      <div id="pend"></div>
+      <details><summary>Rejected (<span id="nRej">0</span>)</summary><div id="rej"></div></details>
+      <details open><summary>Add a question yourself (e.g. from the room)</summary>
+        <input type="text" id="addName" placeholder="Name (optional)" maxlength="40">
+        <input type="text" id="addText" placeholder="Question" maxlength="300">
+        <button class="p" id="addBtn">Add &amp; publish</button>
+      </details>
+    </div>
+    <div class="col">
+      <h2>Live <span class="badge" id="nLive">0</span>
+        <span class="seg" style="margin-left:auto"><button id="sPop" class="on">Popular</button><button id="sNew">Recent</button></span>
+      </h2>
+      <div id="live"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let key = ''; try { key = sessionStorage.getItem('qa_key') || ''; } catch (e) {}
+const $ = (id) => document.getElementById(id);
+let sort = 'pop', data = null;
+
+async function api(path, body) {
+  const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'x-mod-key': key }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  if (r.status === 401) { showLogin('Wrong password'); throw new Error('401'); }
+  return r.json();
+}
+function showLogin(msg) { $('app').style.display = 'none'; $('login').style.display = 'block'; $('lerr').textContent = msg || ''; }
+async function enter() {
+  key = $('pw').value || key;
+  try { await refresh(); try { sessionStorage.setItem('qa_key', key); } catch (e) {} $('login').style.display = 'none'; $('app').style.display = 'block'; }
+  catch (e) {}
+}
+$('go').onclick = enter; $('pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') enter(); });
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function btn(label, cls, fn) { const b = el('button', cls, label); b.onclick = async () => { b.disabled = true; try { await fn(); await refresh(); } catch (e) {} }; return b; }
+const set = (id, patch) => api('/api/mod/set', Object.assign({ id }, patch));
+const hhmm = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+function card(q, actions, feat) {
+  const d = el('div', 'q' + (q.answered ? ' done' : '') + (feat ? ' feat' : ''));
+  const v = el('div', 'v', String(q.votes)); v.appendChild(el('small', '', 'votes'));
+  const b = el('div', 'b'); b.appendChild(el('div', 't', q.text));
+  b.appendChild(el('div', 'm', (q.name || 'Anonymous') + ' · ' + hhmm(q.ts)));
+  const a = el('div', 'act'); actions.forEach((x) => a.appendChild(x)); b.appendChild(a);
+  d.append(v, b); return d;
+}
+
+function render() {
+  if (!data) return;
+  $('pre').checked = data.premoderation;
+  $('conn').textContent = data.connected + ' device(s) connected';
+  const Q = data.questions;
+  const pend = Q.filter((q) => q.status === 'pending').sort((a, b) => a.ts - b.ts);
+  const rej = Q.filter((q) => q.status === 'rejected').sort((a, b) => b.ts - a.ts);
+  const live = Q.filter((q) => q.status === 'approved').sort(sort === 'pop' ? (a, b) => (b.votes - a.votes) || (b.ts - a.ts) : (a, b) => b.ts - a.ts);
+  $('nPend').textContent = pend.length; $('nRej').textContent = rej.length; $('nLive').textContent = live.filter((q) => !q.answered).length;
+
+  const P = $('pend'); P.textContent = '';
+  if (!pend.length) P.appendChild(el('div', 'empty', 'Nothing waiting.'));
+  pend.forEach((q) => P.appendChild(card(q, [
+    btn('✓ Approve', 'ok', () => set(q.id, { status: 'approved' })),
+    btn('✕ Reject', 'bad', () => set(q.id, { status: 'rejected' })),
+  ])));
+
+  const R = $('rej'); R.textContent = '';
+  rej.forEach((q) => R.appendChild(card(q, [btn('Restore', '', () => set(q.id, { status: 'approved' }))])));
+
+  const Lv = $('live'); Lv.textContent = '';
+  if (!live.length) Lv.appendChild(el('div', 'empty', 'No live questions.'));
+  live.forEach((q) => {
+    const f = data.featuredId === q.id;
+    Lv.appendChild(card(q, [
+      btn(f ? '★ On screen (click to clear)' : '★ Show big on screen', f ? 'on' : '', () => api('/api/mod/feature', { id: f ? null : q.id })),
+      btn(q.answered ? 'Undo answered' : '✔ Answered', '', () => set(q.id, { answered: !q.answered })),
+      btn('✕ Remove', 'bad', () => set(q.id, { status: 'rejected' })),
+    ], f));
+  });
+}
+
+async function refresh() { data = await api('/api/mod/questions'); render(); }
+$('pre').onchange = async () => { await api('/api/mod/settings', { premoderation: $('pre').checked }); refresh(); };
+$('sPop').onclick = () => { sort = 'pop'; $('sPop').className = 'on'; $('sNew').className = ''; render(); };
+$('sNew').onclick = () => { sort = 'new'; $('sNew').className = 'on'; $('sPop').className = ''; render(); };
+$('addBtn').onclick = async () => {
+  const text = $('addText').value.trim(); if (text.length < 3) return;
+  await api('/api/mod/add', { text, name: $('addName').value.trim() }); $('addText').value = ''; refresh();
+};
+$('exp').onclick = (e) => { e.preventDefault(); location.href = '/api/mod/export.csv?key=' + encodeURIComponent(key); };
+
+if (key) { enter(); }
+setInterval(() => { if ($('app').style.display === 'block') refresh().catch(() => {}); }, 2000);
+</script>
+</body>
+</html>

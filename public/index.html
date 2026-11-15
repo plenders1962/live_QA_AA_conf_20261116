@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&A</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1b2430; --mute:#6b7685; --acc:#2457d6; --line:#e3e7ee; --ok:#e8f0ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { position:sticky; top:0; background:var(--card); border-bottom:1px solid var(--line); padding:12px 16px; z-index:5; }
+  h1 { font-size:18px; margin:0 0 10px; }
+  .tabs { display:flex; gap:8px; }
+  .tab { flex:1; padding:8px; border:1px solid var(--line); background:var(--card); border-radius:8px; font:inherit; color:var(--ink); }
+  .tab.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  main { max-width:680px; margin:0 auto; padding:12px 16px 190px; }
+  .q { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin:10px 0; display:flex; gap:12px; align-items:flex-start; }
+  .q.answered { opacity:.55; }
+  .q .body { flex:1; min-width:0; }
+  .q .txt { white-space:pre-wrap; overflow-wrap:anywhere; }
+  .q .meta { font-size:13px; color:var(--mute); margin-top:4px; }
+  .vote { min-width:56px; border:1px solid var(--line); background:var(--card); border-radius:10px; padding:6px 4px; font:inherit; text-align:center; color:var(--ink); }
+  .vote .n { display:block; font-weight:700; font-size:18px; }
+  .vote .a { display:block; font-size:12px; color:var(--mute); }
+  .vote.on { background:var(--ok); border-color:var(--acc); color:var(--acc); }
+  .vote.on .a { color:var(--acc); }
+  .empty { text-align:center; color:var(--mute); padding:40px 0; }
+  form { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  form .in { max-width:680px; margin:0 auto; display:grid; gap:8px; }
+  textarea, input[type=text] { width:100%; font:inherit; padding:10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }
+  textarea { resize:none; height:64px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row input { flex:1; }
+  .send { padding:10px 18px; border:0; border-radius:8px; background:var(--acc); color:#fff; font:inherit; font-weight:600; }
+  .send:disabled { opacity:.5; }
+  .count { font-size:12px; color:var(--mute); text-align:right; }
+  #toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#1b2430; color:#fff; padding:10px 16px; border-radius:10px; font-size:14px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:90%; text-align:center; z-index:9; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="tabs">
+    <button class="tab on" id="tabPop"></button>
+    <button class="tab" id="tabNew"></button>
+  </div>
+</header>
+<main><div id="list"></div></main>
+<form id="f" autocomplete="off">
+  <div class="in">
+    <textarea id="text" maxlength="300"></textarea>
+    <div class="row">
+      <input type="text" id="name" maxlength="40">
+      <button class="send" id="send" type="submit"></button>
+    </div>
+    <div class="count" id="cnt"></div>
+  </div>
+</form>
+<div id="toast"></div>
+<script>
+const L = {
+  fr: { title:'Questions à l’intervenant', pop:'Populaires', recent:'Récentes', ph:'Posez votre question…', name:'Votre nom (facultatif)', send:'Envoyer',
+        votes:'votes', vote:'Voter', empty:'Aucune question pour l’instant. Soyez le premier !', answered:'Répondue', anon:'Anonyme',
+        sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.' },
+  en: { title:'Ask the speakers', pop:'Popular', recent:'Recent', ph:'Ask your question…', name:'Your name (optional)', send:'Send',
+        votes:'votes', vote:'Vote', empty:'No questions yet. Be the first!', answered:'Answered', anon:'Anonymous',
+        sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.' },
+};
+const qs = new URLSearchParams(location.search);
+const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+const T = L[lang] || L.en;
+document.documentElement.lang = lang;
+
+let voterId;
+try { voterId = localStorage.getItem('qa_voter'); } catch (e) {}
+if (!voterId) {
+  voterId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/-/g, '');
+  try { localStorage.setItem('qa_voter', voterId); } catch (e) {}
+}
+
+const $ = (id) => document.getElementById(id);
+$('title').textContent = T.title;
+$('tabPop').textContent = T.pop; $('tabNew').textContent = T.recent;
+$('text').placeholder = T.ph; $('name').placeholder = T.name; $('send').textContent = T.send;
+
+let sort = 'pop', data = [];
+function setSort(s) { sort = s; $('tabPop').classList.toggle('on', s === 'pop'); $('tabNew').classList.toggle('on', s === 'new'); render(); }
+$('tabPop').onclick = () => setSort('pop'); $('tabNew').onclick = () => setSort('new');
+
+function ago(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return lang === 'fr' ? 'à l’instant' : 'just now';
+  if (m < 60) return (lang === 'fr' ? 'il y a ' : '') + m + ' min' + (lang === 'fr' ? '' : ' ago');
+  const h = Math.floor(m / 60);
+  return (lang === 'fr' ? 'il y a ' : '') + h + ' h' + (lang === 'fr' ? '' : ' ago');
+}
+
+function render() {
+  const el = $('list');
+  const items = data.slice().sort(sort === 'pop' ? (a, b) => (b.votes - a.votes) || (b.ts - a.ts) : (a, b) => b.ts - a.ts);
+  el.textContent = '';
+  if (!items.length) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = T.empty; el.appendChild(d); return; }
+  for (const q of items) {
+    const card = document.createElement('div'); card.className = 'q' + (q.answered ? ' answered' : '');
+    const btn = document.createElement('button'); btn.className = 'vote' + (q.voted ? ' on' : '');
+    btn.innerHTML = '<span class="n"></span><span class="a"></span>';
+    btn.firstChild.textContent = q.votes; btn.lastChild.textContent = q.voted ? '✓' : T.vote;
+    btn.onclick = () => vote(q);
+    const body = document.createElement('div'); body.className = 'body';
+    const txt = document.createElement('div'); txt.className = 'txt'; txt.textContent = q.text;
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = (q.name || T.anon) + ' · ' + ago(q.ts) + (q.answered ? ' · ✔ ' + T.answered : '');
+    body.append(txt, meta); card.append(btn, body); el.appendChild(card);
+  }
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/questions?v=' + encodeURIComponent(voterId), { cache: 'no-store' });
+    data = (await r.json()).questions; render();
+  } catch (e) {}
+}
+
+async function vote(q) {
+  q.voted = !q.voted; q.votes += q.voted ? 1 : -1; render(); // optimistic
+  try {
+    await fetch('/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: q.id, voterId, on: q.voted }) });
+  } catch (e) { load(); }
+}
+
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3200); }
+
+$('text').addEventListener('input', () => { $('cnt').textContent = $('text').value.length + '/300'; });
+try { $('name').value = localStorage.getItem('qa_name') || ''; } catch (e) {}
+
+$('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $('text').value.trim(); if (text.length < 3) return;
+  const name = $('name').value.trim();
+  try { localStorage.setItem('qa_name', name); } catch (e) {}
+  $('send').disabled = true;
+  try {
+    const r = await fetch('/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, name, voterId }) });
+    if (r.status === 429) toast(T.fast);
+    else if (!r.ok) toast(T.err);
+    else { const j = await r.json(); $('text').value = ''; $('cnt').textContent = ''; toast(j.status === 'pending' ? T.sentPending : T.sentLive); load(); }
+  } catch (err) { toast(T.err); }
+  $('send').disabled = false;
+});
+
+load();
+const es = new EventSource('/api/stream');
+es.addEventListener('update', load);
+setInterval(load, 20000); // safety net
+setInterval(render, 60000); // refresh "x min ago"
+</script>
+</body>
+</html>

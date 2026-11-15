@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: live-qa
+    runtime: node
+    plan: free
+    buildCommand: echo "no build"
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: MOD_PASSWORD
+        sync: false

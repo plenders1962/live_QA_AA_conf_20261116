@@ -1,0 +1,9 @@
+{
+  "name": "live-qa",
+  "version": "1.0.0",
+  "description": "Minimal live Q&A for conferences: audience questions + votes, moderation, projector view",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

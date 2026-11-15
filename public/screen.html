@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&A — screen</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; }
+  body { background:#0f1722; color:#fff; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; display:flex; flex-direction:column; overflow:hidden; }
+  header { display:flex; align-items:center; gap:24px; padding:16px 32px; background:#172234; }
+  header h1 { margin:0; font-size:28px; flex:1; }
+  header .join { text-align:right; font-size:20px; color:#9fb3cf; }
+  header .join b { color:#fff; font-size:26px; display:block; }
+  header img { height:96px; background:#fff; padding:6px; border-radius:8px; }
+  main { flex:1; padding:20px 32px; overflow:hidden; display:flex; flex-direction:column; gap:14px; }
+  .q { display:flex; gap:20px; align-items:center; background:#172234; border-radius:14px; padding:16px 22px; }
+  .v { min-width:78px; text-align:center; font-size:38px; font-weight:800; color:#6fa0ff; }
+  .v small { display:block; font-size:14px; font-weight:400; color:#9fb3cf; }
+  .t { font-size:var(--fs,30px); line-height:1.25; overflow-wrap:anywhere; }
+  .n { color:#9fb3cf; font-size:16px; margin-top:4px; }
+  .big { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:24px; padding:0 6vw; }
+  .big .t { font-size:clamp(32px,5.2vw,76px); font-weight:600; line-height:1.2; }
+  .big .n { font-size:26px; }
+  .big .v { font-size:56px; }
+  .empty { margin:auto; font-size:34px; color:#9fb3cf; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="h"></h1>
+  <div class="join"><span id="jl"></span><b id="url"></b></div>
+  <img id="qr" alt="" hidden>
+</header>
+<main id="m"></main>
+<script>
+const qs = new URLSearchParams(location.search);
+const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+const T = lang === 'fr'
+  ? { h:'Posez vos questions et votez', jl:'Rejoignez sur', empty:'En attente de vos questions…', anon:'Anonyme', votes:'votes' }
+  : { h:'Ask your questions and vote', jl:'Join at', empty:'Waiting for your questions…', anon:'Anonymous', votes:'votes' };
+const sortMode = qs.get('sort') === 'time' ? 'time' : 'pop';
+const maxN = Number(qs.get('n') || 6);
+const joinUrl = qs.get('url') || location.origin + '/' + (qs.get('lang') ? '?lang=' + qs.get('lang') : '');
+const $ = (id) => document.getElementById(id);
+$('h').textContent = T.h; $('jl').textContent = T.jl; $('url').textContent = joinUrl.replace(/^https?:\/\//, '');
+const qr = $('qr');
+qr.onload = () => { qr.hidden = false; };
+qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&data=' + encodeURIComponent(joinUrl);
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+
+async function load() {
+  let d; try { d = await (await fetch('/api/questions', { cache: 'no-store' })).json(); } catch (e) { return; }
+  const m = $('m'); m.textContent = '';
+  const open = d.questions.filter((q) => !q.answered);
+  const feat = open.find((q) => q.id === d.featuredId);
+  if (feat) {
+    const b = el('div', 'big');
+    b.appendChild(el('div', 't', feat.text));
+    b.appendChild(el('div', 'n', (feat.name || T.anon) + ' · ' + feat.votes + ' ' + T.votes));
+    m.appendChild(b); return;
+  }
+  const list = open.sort(sortMode === 'pop' ? (a, b) => (b.votes - a.votes) || (b.ts - a.ts) : (a, b) => b.ts - a.ts).slice(0, maxN);
+  if (!list.length) { m.appendChild(el('div', 'empty', T.empty)); return; }
+  const fs = list.length <= 3 ? 40 : list.length <= 5 ? 32 : 28;
+  m.style.setProperty('--fs', fs + 'px');
+  list.forEach((q) => {
+    const c = el('div', 'q');
+    const v = el('div', 'v', String(q.votes)); v.appendChild(el('small', '', T.votes));
+    const b = el('div'); b.appendChild(el('div', 't', q.text)); b.appendChild(el('div', 'n', q.name || T.anon));
+    c.append(v, b); m.appendChild(c);
+  });
+}
+load();
+const es = new EventSource('/api/stream'); es.addEventListener('update', load);
+setInterval(load, 10000);
+</script>
+</body>
+</html>
