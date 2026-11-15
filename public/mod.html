@@ -38,6 +38,12 @@
   .seg button:first-child { border-radius:8px 0 0 8px; } .seg button:last-child { border-radius:0 8px 8px 0; }
   .empty { color:var(--mute); padding:8px 0; }
   details { margin-top:14px; } summary { cursor:pointer; color:var(--mute); }
+  .pl { border-top:1px solid var(--line); padding:10px 0; }
+  .pl:first-of-type { border-top:0; }
+  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:#eef0f4; color:var(--mute); margin-left:6px; }
+  .tag.live { background:#d9f5e3; color:var(--ok); } .tag.closed { background:#fde2e2; color:var(--bad); }
+  .res { font-size:13px; color:var(--mute); margin:4px 0 8px; }
+  textarea.po { width:100%; padding:10px; font:inherit; border:1px solid var(--line); border-radius:8px; margin:8px 0; }
 </style>
 </head>
 <body>
@@ -73,6 +79,17 @@
         <span class="seg" style="margin-left:auto"><button id="sPop" class="on">Popular</button><button id="sNew">Recent</button></span>
       </h2>
       <div id="live"></div>
+    </div>
+    <div class="col" style="grid-column:1/-1">
+      <h2>Polls <span class="badge" id="nPoll">0</span>
+        <a href="#" id="expP" style="margin-left:auto;font-weight:400;font-size:13px;color:var(--acc)">Export polls CSV</a></h2>
+      <div id="polls"></div>
+      <details open><summary>Create a poll</summary>
+        <input type="text" id="pq" placeholder="Poll question" maxlength="200">
+        <textarea class="po" id="po" rows="4" placeholder="One answer per line (2 to 8), e.g.&#10;Yes&#10;No&#10;Not sure"></textarea>
+        <label><input type="checkbox" id="pm"> Allow several answers</label><br><br>
+        <button class="p" id="pc">Create poll</button>
+      </details>
     </div>
   </div>
 </div>
@@ -141,7 +158,37 @@ function render() {
   });
 }
 
-async function refresh() { data = await api('/api/mod/questions'); render(); }
+function renderPolls() {
+  const box = $('polls'); box.textContent = '';
+  const list = data.polls || [];
+  $('nPoll').textContent = list.length;
+  if (!list.length) box.appendChild(el('div', 'empty', 'No polls yet.'));
+  list.forEach((p) => {
+    const live = data.livePollId === p.id;
+    const d = el('div', 'pl');
+    const h = el('div', '', p.question); h.style.fontWeight = '600';
+    if (live) h.appendChild(el('span', 'tag ' + (p.status === 'open' ? 'live' : 'closed'), p.status === 'open' ? 'LIVE · voting open' : 'on screen · voting closed'));
+    else h.appendChild(el('span', 'tag', p.status === 'closed' ? 'closed' : 'draft'));
+    d.appendChild(h);
+    d.appendChild(el('div', 'res', p.options.map((o, i) => o + ': ' + p.counts[i]).join('   |   ') + '   —   ' + p.voters + ' voter(s)' + (p.multi ? ' (multiple answers)' : '')));
+    const a = el('div', 'act');
+    if (!live || p.status !== 'open') a.appendChild(btn(p.status === 'draft' ? '▶ Launch (screen + phones)' : '▶ Launch / reopen', 'ok', () => api('/api/mod/poll/launch', { id: p.id })));
+    if (live && p.status === 'open') a.appendChild(btn('■ Close voting', 'bad', () => api('/api/mod/poll/close', { id: p.id })));
+    if (live) a.appendChild(btn('Hide from screen & phones', '', () => api('/api/mod/poll/hide', {})));
+    a.appendChild(btn('Delete', '', () => api('/api/mod/poll/delete', { id: p.id })));
+    d.appendChild(a); box.appendChild(d);
+  });
+}
+$('pc').onclick = async () => {
+  const question = $('pq').value.trim();
+  const options = $('po').value.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (question.length < 3 || options.length < 2) { alert('A question and at least 2 answers (one per line) are needed.'); return; }
+  await api('/api/mod/poll/create', { question, options, multi: $('pm').checked });
+  $('pq').value = ''; $('po').value = ''; $('pm').checked = false; refresh();
+};
+$('expP').onclick = (e) => { e.preventDefault(); location.href = '/api/mod/export-polls.csv?key=' + encodeURIComponent(key); };
+
+async function refresh() { data = await api('/api/mod/questions'); render(); renderPolls(); }
 $('pre').onchange = async () => { await api('/api/mod/settings', { premoderation: $('pre').checked }); refresh(); };
 $('sPop').onclick = () => { sort = 'pop'; $('sPop').className = 'on'; $('sNew').className = ''; render(); };
 $('sNew').onclick = () => { sort = 'new'; $('sNew').className = 'on'; $('sPop').className = ''; render(); };

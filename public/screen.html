@@ -24,6 +24,14 @@
   .big .n { font-size:26px; }
   .big .v { font-size:56px; }
   .empty { margin:auto; font-size:34px; color:#9fb3cf; text-align:center; }
+  .poll { flex:1; display:flex; flex-direction:column; justify-content:center; gap:18px; padding:0 3vw; }
+  .poll .lbl { font-size:20px; letter-spacing:.08em; text-transform:uppercase; color:#6fa0ff; font-weight:700; }
+  .poll h2 { margin:0 0 6px; font-size:clamp(30px,4.2vw,60px); line-height:1.15; }
+  .row { position:relative; background:#172234; border-radius:12px; overflow:hidden; }
+  .row .fill { position:absolute; left:0; top:0; bottom:0; background:#2f5fd0; transition:width .5s; }
+  .row .tx { position:relative; display:flex; justify-content:space-between; gap:20px; padding:14px 22px; font-size:clamp(22px,3vw,40px); }
+  .row .tx b { font-variant-numeric:tabular-nums; }
+  .poll .tot { color:#9fb3cf; font-size:22px; }
 </style>
 </head>
 <body>
@@ -37,8 +45,8 @@
 const qs = new URLSearchParams(location.search);
 const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
 const T = lang === 'fr'
-  ? { h:'Posez vos questions et votez', jl:'Rejoignez sur', empty:'En attente de vos questions…', anon:'Anonyme', votes:'votes' }
-  : { h:'Ask your questions and vote', jl:'Join at', empty:'Waiting for your questions…', anon:'Anonymous', votes:'votes' };
+  ? { h:'Posez vos questions et votez', jl:'Rejoignez sur', empty:'En attente de vos questions…', anon:'Anonyme', votes:'votes', poll:'Sondage', closed:'Vote terminé', total:'participants' }
+  : { h:'Ask your questions and vote', jl:'Join at', empty:'Waiting for your questions…', anon:'Anonymous', votes:'votes', poll:'Poll', closed:'Voting closed', total:'participants' };
 const sortMode = qs.get('sort') === 'time' ? 'time' : 'pop';
 const maxN = Number(qs.get('n') || 6);
 const joinUrl = qs.get('url') || location.origin + '/' + (qs.get('lang') ? '?lang=' + qs.get('lang') : '');
@@ -53,6 +61,19 @@ function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.
 async function load() {
   let d; try { d = await (await fetch('/api/questions', { cache: 'no-store' })).json(); } catch (e) { return; }
   const m = $('m'); m.textContent = '';
+  if (d.poll) {
+    const p = d.poll, box = el('div', 'poll');
+    box.appendChild(el('div', 'lbl', T.poll + (p.status === 'open' ? '' : ' · ' + T.closed)));
+    box.appendChild(el('h2', '', p.question));
+    p.options.forEach((o, i) => {
+      const pct = p.voters ? Math.round(100 * p.counts[i] / p.voters) : 0;
+      const row = el('div', 'row'); const fill = el('div', 'fill'); fill.style.width = pct + '%'; row.appendChild(fill);
+      const tx = el('div', 'tx'); tx.appendChild(el('span', '', o)); tx.appendChild(el('b', '', pct + '%  (' + p.counts[i] + ')'));
+      row.appendChild(tx); box.appendChild(row);
+    });
+    box.appendChild(el('div', 'tot', p.voters + ' ' + T.total));
+    m.appendChild(box); return;
+  }
   const open = d.questions.filter((q) => !q.answered);
   const feat = open.find((q) => q.id === d.featuredId);
   if (feat) {

@@ -25,6 +25,17 @@
   .vote.on { background:var(--ok); border-color:var(--acc); color:var(--acc); }
   .vote.on .a { color:var(--acc); }
   .empty { text-align:center; color:var(--mute); padding:40px 0; }
+  .poll { background:var(--card); border:2px solid var(--acc); border-radius:12px; padding:14px; margin:10px 0 18px; }
+  .poll .lbl { font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--acc); }
+  .poll h2 { font-size:18px; margin:4px 0 12px; overflow-wrap:anywhere; }
+  .opt { position:relative; display:block; width:100%; text-align:left; margin:6px 0; padding:11px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); font:inherit; color:var(--ink); overflow:hidden; }
+  .opt .bar { position:absolute; left:0; top:0; bottom:0; background:#d9e5ff; z-index:0; transition:width .4s; }
+  .opt.on { border-color:var(--acc); border-width:2px; padding:10px 11px; }
+  .opt.on .bar { background:#bcd0ff; }
+  .opt .in { position:relative; z-index:1; display:flex; justify-content:space-between; gap:12px; }
+  .opt:disabled { color:var(--ink); }
+  .poll .hint { font-size:13px; color:var(--mute); margin:6px 0 0; }
+  .poll .send { margin-top:8px; width:100%; }
   form { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:10px 16px calc(10px + env(safe-area-inset-bottom)); }
   form .in { max-width:680px; margin:0 auto; display:grid; gap:8px; }
   textarea, input[type=text] { width:100%; font:inherit; padding:10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }
@@ -46,7 +57,7 @@
     <button class="tab" id="tabNew"></button>
   </div>
 </header>
-<main><div id="list"></div></main>
+<main><div id="poll"></div><div id="list"></div></main>
 <form id="f" autocomplete="off">
   <div class="in">
     <textarea id="text" maxlength="300"></textarea>
@@ -62,10 +73,12 @@
 const L = {
   fr: { title:'Questions à l’intervenant', pop:'Populaires', recent:'Récentes', ph:'Posez votre question…', name:'Votre nom (facultatif)', send:'Envoyer',
         votes:'votes', vote:'Voter', empty:'Aucune question pour l’instant. Soyez le premier !', answered:'Répondue', anon:'Anonyme',
-        sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.' },
+        sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.',
+        poll:'Sondage', pollMulti:'Plusieurs réponses possibles', pollSingle:'Touchez une réponse pour voter. Vous pouvez changer.', pollClosed:'Vote terminé', pollSubmit:'Valider mon vote', pollSaved:'Vote enregistré' },
   en: { title:'Ask the speakers', pop:'Popular', recent:'Recent', ph:'Ask your question…', name:'Your name (optional)', send:'Send',
         votes:'votes', vote:'Vote', empty:'No questions yet. Be the first!', answered:'Answered', anon:'Anonymous',
-        sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.' },
+        sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.',
+        poll:'Poll', pollMulti:'You can select several answers', pollSingle:'Tap an answer to vote. You can change it.', pollClosed:'Voting closed', pollSubmit:'Submit my vote', pollSaved:'Vote saved' },
 };
 const qs = new URLSearchParams(location.search);
 const lang = qs.get('lang') || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
@@ -115,10 +128,57 @@ function render() {
   }
 }
 
+let poll = null, sel = new Set(), selFor = null;
+
+function renderPoll() {
+  const box = $('poll'); box.textContent = '';
+  if (!poll) return;
+  if (selFor !== poll.id) { sel = new Set(poll.mine); selFor = poll.id; }
+  const open = poll.status === 'open', voted = poll.mine.length > 0, showRes = voted || !open;
+  const card = document.createElement('div'); card.className = 'poll';
+  const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = T.poll + (open ? '' : ' · ' + T.pollClosed);
+  const h = document.createElement('h2'); h.textContent = poll.question;
+  card.append(lbl, h);
+  poll.options.forEach((o, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'opt';
+    b.disabled = !open;
+    const chosen = poll.multi ? sel.has(i) : poll.mine.includes(i);
+    if (chosen) b.classList.add('on');
+    const pct = poll.voters ? Math.round(100 * poll.counts[i] / poll.voters) : 0;
+    if (showRes) { const bar = document.createElement('span'); bar.className = 'bar'; bar.style.width = pct + '%'; b.appendChild(bar); }
+    const inn = document.createElement('span'); inn.className = 'in';
+    const a = document.createElement('span'); a.textContent = (chosen ? '✓ ' : '') + o; inn.appendChild(a);
+    if (showRes) { const c = document.createElement('span'); c.textContent = pct + '%'; inn.appendChild(c); }
+    b.appendChild(inn);
+    b.onclick = () => {
+      if (poll.multi) { sel.has(i) ? sel.delete(i) : sel.add(i); renderPoll(); } else pollVote([i]);
+    };
+    card.appendChild(b);
+  });
+  if (open) {
+    const hint = document.createElement('div'); hint.className = 'hint';
+    hint.textContent = poll.multi ? T.pollMulti : T.pollSingle; card.appendChild(hint);
+    if (poll.multi) {
+      const s = document.createElement('button'); s.type = 'button'; s.className = 'send'; s.textContent = T.pollSubmit;
+      s.disabled = !sel.size; s.onclick = () => pollVote(Array.from(sel)); card.appendChild(s);
+    }
+  }
+  box.appendChild(card);
+}
+
+async function pollVote(choices) {
+  poll.mine = choices.slice(); renderPoll();
+  try {
+    const r = await fetch('/api/poll/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poll.id, voterId, choices }) });
+    if (r.ok) toast(T.pollSaved);
+  } catch (e) {}
+  load();
+}
+
 async function load() {
   try {
     const r = await fetch('/api/questions?v=' + encodeURIComponent(voterId), { cache: 'no-store' });
-    data = (await r.json()).questions; render();
+    const j = await r.json(); data = j.questions; poll = j.poll; render(); renderPoll();
   } catch (e) {}
 }
 

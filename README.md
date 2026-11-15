@@ -8,6 +8,12 @@ Audience questions + votes, moderator queue, projector view. No dependencies, no
 | `/mod` | you | password-protected. Approve / reject pending questions, mark answered, remove, feature one question big on screen, add a question from the room, export CSV |
 | `/screen` | projector | live list of the top questions, or one featured question in large type |
 
+**Polls.** At the bottom of `/mod`, *Create a poll*: a question and 2 to 8 answers (one per line), optionally allowing several answers. Then:
+- **Launch**: the poll appears at the top of every phone and takes over the projector screen with live bars. Launching another poll closes the previous one.
+- **Close voting**: results stay visible, no more votes. (Until then, people can change their vote.)
+- **Hide from screen & phones**: back to the questions.
+- *Export polls CSV* saves the results.
+
 Language: French or English automatically from the phone's language. Force with `?lang=fr` or `?lang=en`.
 
 Projector options: `/screen?sort=time` (newest first instead of most votes), `/screen?n=4` (number of questions shown, default 6), `/screen?url=https://short.link/x` (join address shown on screen).
