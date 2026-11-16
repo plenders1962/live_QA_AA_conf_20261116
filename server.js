@@ -13,6 +13,10 @@ const MIN_MAX_LEN = 20;
 const MAX_MAX_LEN = 1000;
 const MAX_NAME = 40;
 const MIN_INTERVAL_MS = Number(process.env.MIN_INTERVAL_MS || 8000); // per-voter delay between questions
+// Panelists a question can be addressed to (plus 'all' = whole panel). Override with PANEL_NAMES="A,B,C".
+const PANEL = process.env.PANEL_NAMES
+  ? process.env.PANEL_NAMES.split(',').map((s) => s.trim()).filter(Boolean)
+  : ['Pierre Gattaz', 'Ilaria Casillo', 'Fabrice Bonnifet'];
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // ---------- state ----------
@@ -74,9 +78,14 @@ function clean(s, max) {
   const t = String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   return max === undefined ? t : t.slice(0, max);
 }
+// Addressee: a panelist name from PANEL, or 'all'. Missing/empty -> 'all'. Anything else -> null (invalid).
+function normTo(v) {
+  if (v === undefined || v === null || v === '') return 'all';
+  return v === 'all' || PANEL.includes(v) ? v : null;
+}
 function pub(q, voterId) {
   return {
-    id: q.id, text: q.text, name: q.name, ts: q.ts, answered: !!q.answered,
+    id: q.id, text: q.text, name: q.name, to: q.to || 'all', ts: q.ts, answered: !!q.answered,
     votes: q.voters.length, voted: voterId ? q.voters.includes(voterId) : false,
   };
 }
@@ -98,7 +107,7 @@ function livePoll(voterId) {
 }
 
 function modView(q) {
-  return { id: q.id, text: q.text, name: q.name, ts: q.ts, status: q.status, answered: !!q.answered, votes: q.voters.length };
+  return { id: q.id, text: q.text, name: q.name, to: q.to || 'all', ts: q.ts, status: q.status, answered: !!q.answered, votes: q.voters.length };
 }
 
 // ---------- routes ----------
@@ -133,7 +142,7 @@ async function handle(req, res) {
   if (p === '/api/questions' && req.method === 'GET') {
     const v = clean(url.searchParams.get('v'), 64);
     const list = state.questions.filter((q) => q.status === 'approved').map((q) => pub(q, v));
-    return json(res, 200, { premoderation: state.premoderation, featuredId: state.featuredId, questions: list, poll: livePoll(v), maxLen: state.maxLen });
+    return json(res, 200, { premoderation: state.premoderation, featuredId: state.featuredId, questions: list, poll: livePoll(v), maxLen: state.maxLen, panel: PANEL });
   }
 
   if (p === '/api/poll/vote' && req.method === 'POST') {
@@ -157,11 +166,13 @@ async function handle(req, res) {
     const text = clean(b.text); // no truncation: a question that is too long is refused, not silently cut
     if (!voterId || text.length < 3) return json(res, 400, { error: 'invalid' });
     if (text.length > state.maxLen) return json(res, 400, { error: 'too_long', max: state.maxLen, length: text.length });
+    const to = normTo(b.to);
+    if (to === null) return json(res, 400, { error: 'invalid_to' });
     const now = Date.now();
     if (now - (lastSubmit.get(voterId) || 0) < MIN_INTERVAL_MS) return json(res, 429, { error: 'too_fast' });
     lastSubmit.set(voterId, now);
     const q = {
-      id: crypto.randomBytes(5).toString('hex'), text, name: clean(b.name, MAX_NAME), ts: now,
+      id: crypto.randomBytes(5).toString('hex'), text, name: clean(b.name, MAX_NAME), to, ts: now,
       status: state.premoderation ? 'pending' : 'approved', answered: false, voters: [],
     };
     state.questions.push(q);
@@ -190,7 +201,7 @@ async function handle(req, res) {
         premoderation: state.premoderation, featuredId: state.featuredId, connected: clients.size,
         questions: state.questions.map(modView),
         polls: state.polls.map((x) => pubPoll(x, null, false)), livePollId: state.livePollId, showResults: state.showResults,
-        maxLen: state.maxLen, minMaxLen: MIN_MAX_LEN, maxMaxLen: MAX_MAX_LEN,
+        maxLen: state.maxLen, minMaxLen: MIN_MAX_LEN, maxMaxLen: MAX_MAX_LEN, panel: PANEL,
       });
     }
     if (p === '/api/mod/export-polls.csv' && req.method === 'GET') {
@@ -205,9 +216,9 @@ async function handle(req, res) {
     }
     if (p === '/api/mod/export.csv' && req.method === 'GET') {
       const esc = (s) => '"' + String(s).replace(/"/g, '""') + '"';
-      const rows = [['time', 'status', 'answered', 'votes', 'name', 'question'].join(',')];
+      const rows = [['time', 'status', 'answered', 'votes', 'name', 'addressed_to', 'question'].join(',')];
       for (const q of state.questions) {
-        rows.push([new Date(q.ts).toISOString(), q.status, q.answered, q.voters.length, esc(q.name), esc(q.text)].join(','));
+        rows.push([new Date(q.ts).toISOString(), q.status, q.answered, q.voters.length, esc(q.name), esc(q.to || 'all'), esc(q.text)].join(','));
       }
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="questions.csv"' });
       return res.end('﻿' + rows.join('\n'));
@@ -281,8 +292,10 @@ async function handle(req, res) {
     if (p === '/api/mod/add' && req.method === 'POST') {
       const text = clean(b.text, MAX_MAX_LEN); // the moderator is not bound by the audience limit
       if (text.length < 3) return json(res, 400, { error: 'invalid' });
+      const to = normTo(b.to);
+      if (to === null) return json(res, 400, { error: 'invalid_to' });
       state.questions.push({
-        id: crypto.randomBytes(5).toString('hex'), text, name: clean(b.name, MAX_NAME), ts: Date.now(),
+        id: crypto.randomBytes(5).toString('hex'), text, name: clean(b.name, MAX_NAME), to, ts: Date.now(),
         status: 'approved', answered: false, voters: [],
       });
       save(); broadcast();

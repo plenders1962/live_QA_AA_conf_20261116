@@ -73,6 +73,7 @@
       <details><summary>Rejected (<span id="nRej">0</span>)</summary><div id="rej"></div></details>
       <details open><summary>Add a question yourself (e.g. from the room)</summary>
         <input type="text" id="addName" placeholder="Name (optional)" maxlength="40">
+        <select id="addTo" style="width:100%;padding:10px;font:inherit;border:1px solid var(--line);border-radius:8px;margin:0 0 8px;background:#fff"></select>
         <input type="text" id="addText" placeholder="Question" maxlength="1000">
         <button class="p" id="addBtn">Add &amp; publish</button>
       </details>
@@ -124,7 +125,9 @@ function card(q, actions, feat) {
   const d = el('div', 'q' + (q.answered ? ' done' : '') + (feat ? ' feat' : ''));
   const v = el('div', 'v', String(q.votes)); v.appendChild(el('small', '', 'votes'));
   const b = el('div', 'b'); b.appendChild(el('div', 't', q.text));
-  b.appendChild(el('div', 'm', (q.name || 'Anonymous') + ' · ' + hhmm(q.ts)));
+  const mm = el('div', 'm', (q.name || 'Anonymous') + ' · ' + hhmm(q.ts) + ' · ');
+  const tt = el('b', '', '➜ ' + (!q.to || q.to === 'all' ? 'Ensemble du panel' : q.to)); tt.style.color = 'var(--acc)'; mm.appendChild(tt);
+  b.appendChild(mm);
   const a = el('div', 'act'); actions.forEach((x) => a.appendChild(x)); b.appendChild(a);
   d.append(v, b); return d;
 }
@@ -132,6 +135,12 @@ function card(q, actions, feat) {
 function render() {
   if (!data) return;
   $('pre').checked = data.premoderation;
+  const sel = $('addTo'), want = (data.panel || []).concat(['all']);
+  if (sel.options.length !== want.length || want.some((v, i) => sel.options[i].value !== v)) {
+    const cur = sel.value || 'all'; sel.textContent = '';
+    want.forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v === 'all' ? 'Ensemble du panel' : v; sel.appendChild(o); });
+    sel.value = want.includes(cur) ? cur : 'all';
+  }
   $('maxLen').min = data.minMaxLen; $('maxLen').max = data.maxMaxLen;
   if (document.activeElement !== $('maxLen')) $('maxLen').value = data.maxLen; // don't overwrite while typing
   $('conn').textContent = data.connected + ' device(s) connected';
@@ -209,7 +218,7 @@ $('sPop').onclick = () => { sort = 'pop'; $('sPop').className = 'on'; $('sNew').
 $('sNew').onclick = () => { sort = 'new'; $('sNew').className = 'on'; $('sPop').className = ''; render(); };
 $('addBtn').onclick = async () => {
   const text = $('addText').value.trim(); if (text.length < 3) return;
-  await api('/api/mod/add', { text, name: $('addName').value.trim() }); $('addText').value = ''; refresh();
+  await api('/api/mod/add', { text, name: $('addName').value.trim(), to: $('addTo').value }); $('addText').value = ''; refresh();
 };
 $('exp').onclick = (e) => { e.preventDefault(); location.href = '/api/mod/export.csv?key=' + encodeURIComponent(key); };
 

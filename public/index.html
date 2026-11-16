@@ -13,7 +13,7 @@
   .tabs { display:flex; gap:8px; }
   .tab { flex:1; padding:8px; border:1px solid var(--line); background:var(--card); border-radius:8px; font:inherit; color:var(--ink); }
   .tab.on { background:var(--acc); color:#fff; border-color:var(--acc); }
-  main { max-width:680px; margin:0 auto; padding:12px 16px 190px; }
+  main { max-width:680px; margin:0 auto; padding:12px 16px 240px; }
   .q { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin:10px 0; display:flex; gap:12px; align-items:flex-start; }
   .q.answered { opacity:.55; }
   .q .body { flex:1; min-width:0; }
@@ -42,6 +42,10 @@
   textarea { resize:none; height:64px; }
   .row { display:flex; gap:8px; align-items:center; }
   .row input { flex:1; }
+  .row select { flex:1; min-width:0; font:inherit; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }
+  .row label { font-size:14px; color:var(--mute); white-space:nowrap; }
+  .to { display:inline-block; font-size:12px; font-weight:700; color:var(--acc); background:var(--ok); border-radius:99px; padding:1px 9px; margin-bottom:5px; }
+  .to.all { color:var(--mute); background:#eef0f4; }
   .send { padding:10px 18px; border:0; border-radius:8px; background:var(--acc); color:#fff; font:inherit; font-weight:600; }
   .send:disabled { opacity:.5; }
   .count { font-size:12px; color:var(--mute); text-align:right; }
@@ -60,6 +64,7 @@
 <main><div id="poll"></div><div id="list"></div></main>
 <form id="f" autocomplete="off">
   <div class="in">
+    <div class="row"><label for="to" id="toLbl"></label><select id="to"></select></div>
     <textarea id="text"></textarea>
     <div class="row">
       <input type="text" id="name" maxlength="40">
@@ -74,13 +79,13 @@ const L = {
   fr: { title:'Questions à l’intervenant', pop:'Populaires', recent:'Récentes', ph:'Posez votre question…', name:'Votre nom (facultatif)', send:'Envoyer',
         votes:'votes', vote:'Voter', empty:'Aucune question pour l’instant. Soyez le premier !', answered:'Répondue', anon:'Anonyme',
         sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.',
-        tooLong:'question trop longue, raccourcissez-la',
+        tooLong:'question trop longue, raccourcissez-la', toLbl:'Question pour :', toAll:'Ensemble du panel',
         poll:'Sondage', pollMulti:'Plusieurs réponses possibles : touchez pour cocher ou décocher, puis validez. Vous pouvez modifier votre vote tant que le sondage est ouvert.', pollSingle:'Touchez une réponse pour voter. Vous pouvez changer.', pollClosed:'Vote terminé', pollSubmit:'Valider mon vote', pollSaved:'Vote enregistré',
         pollThanks:'Merci ! Les résultats seront affichés par l’animateur.', pollNote:'Pourcentages calculés sur l’ensemble des réponses données (plusieurs réponses possibles par personne).' },
   en: { title:'Ask the speakers', pop:'Popular', recent:'Recent', ph:'Ask your question…', name:'Your name (optional)', send:'Send',
         votes:'votes', vote:'Vote', empty:'No questions yet. Be the first!', answered:'Answered', anon:'Anonymous',
         sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.',
-        tooLong:'too long, please shorten it',
+        tooLong:'too long, please shorten it', toLbl:'Question for:', toAll:'Whole panel',
         poll:'Poll', pollMulti:'Several answers allowed: tap to tick or untick, then submit. You can change your vote while the poll is open.', pollSingle:'Tap an answer to vote. You can change it.', pollClosed:'Voting closed', pollSubmit:'Submit my vote', pollSaved:'Vote saved',
         pollThanks:'Thanks! The host will show the results.', pollNote:'Percentages are based on all answers given (each person could choose several).' },
 };
@@ -107,7 +112,20 @@ try { document.cookie = 'qa_voter=' + voterId + '; max-age=2592000; path=/; Same
 const $ = (id) => document.getElementById(id);
 $('title').textContent = T.title;
 $('tabPop').textContent = T.pop; $('tabNew').textContent = T.recent;
+$('toLbl').textContent = T.toLbl;
 $('text').placeholder = T.ph; $('name').placeholder = T.name; $('send').textContent = T.send;
+
+// Addressee selector: panelist names come from the server; 'all' = whole panel (last option, default).
+let panel = null;
+function toLabel(v) { return !v || v === 'all' ? T.toAll : v; }
+function fillTo(list) {
+  if (panel && JSON.stringify(list) === JSON.stringify(panel)) return;
+  panel = list;
+  const sel = $('to'), cur = sel.value || 'all'; sel.textContent = '';
+  list.concat(['all']).forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = toLabel(v); sel.appendChild(o); });
+  sel.value = list.concat(['all']).includes(cur) ? cur : 'all';
+}
+fillTo([]);
 
 let sort = 'pop', data = [];
 function setSort(s) { sort = s; $('tabPop').classList.toggle('on', s === 'pop'); $('tabNew').classList.toggle('on', s === 'new'); render(); }
@@ -136,7 +154,8 @@ function render() {
     const txt = document.createElement('div'); txt.className = 'txt'; txt.textContent = q.text;
     const meta = document.createElement('div'); meta.className = 'meta';
     meta.textContent = (q.name || T.anon) + ' · ' + ago(q.ts) + (q.answered ? ' · ✔ ' + T.answered : '');
-    body.append(txt, meta); card.append(btn, body); el.appendChild(card);
+    const to = document.createElement('div'); to.className = 'to' + (q.to === 'all' ? ' all' : ''); to.textContent = '➜ ' + toLabel(q.to);
+    body.append(to, txt, meta); card.append(btn, body); el.appendChild(card);
   }
 }
 
@@ -204,6 +223,7 @@ async function load() {
     const r = await fetch('/api/questions?v=' + encodeURIComponent(voterId), { cache: 'no-store' });
     const j = await r.json(); data = j.questions; poll = j.poll; render(); renderPoll();
     if (j.maxLen && j.maxLen !== maxLen) applyMax(j.maxLen);
+    if (Array.isArray(j.panel)) fillTo(j.panel);
   } catch (e) {}
 }
 
@@ -238,7 +258,7 @@ $('f').addEventListener('submit', async (e) => {
   try { localStorage.setItem('qa_name', name); } catch (e) {}
   $('send').disabled = true;
   try {
-    const r = await fetch('/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, name, voterId }) });
+    const r = await fetch('/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, name, voterId, to: $('to').value }) });
     if (r.status === 429) toast(T.fast);
     else if (r.status === 400) {
       const j = await r.json().catch(() => ({}));
