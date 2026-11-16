@@ -162,7 +162,7 @@ async function handle(req, res) {
     lastSubmit.set(voterId, now);
     const q = {
       id: crypto.randomBytes(5).toString('hex'), text, name: clean(b.name, MAX_NAME), ts: now,
-      status: state.premoderation ? 'pending' : 'approved', answered: false, voters: [voterId],
+      status: state.premoderation ? 'pending' : 'approved', answered: false, voters: [],
     };
     state.questions.push(q);
     save(); broadcast();
