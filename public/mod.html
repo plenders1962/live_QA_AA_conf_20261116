@@ -58,6 +58,9 @@
   <div class="bar">
     <strong>Moderator</strong>
     <label><input type="checkbox" id="pre"> Approve questions before they appear</label>
+    <label title="Applies to new audience questions only. Questions already posted are not changed.">Max question length
+      <input type="number" id="maxLen" min="20" max="1000" step="10" style="width:78px;padding:4px 6px;font:inherit;border:1px solid var(--line);border-radius:6px"> characters
+      <span id="mlMsg" style="margin-left:4px"></span></label>
     <span id="conn" style="color:var(--mute)"></span>
     <span class="sp"></span>
     <a href="/screen" target="_blank">Projector view ↗</a>
@@ -70,7 +73,7 @@
       <details><summary>Rejected (<span id="nRej">0</span>)</summary><div id="rej"></div></details>
       <details open><summary>Add a question yourself (e.g. from the room)</summary>
         <input type="text" id="addName" placeholder="Name (optional)" maxlength="40">
-        <input type="text" id="addText" placeholder="Question" maxlength="300">
+        <input type="text" id="addText" placeholder="Question" maxlength="1000">
         <button class="p" id="addBtn">Add &amp; publish</button>
       </details>
     </div>
@@ -129,6 +132,8 @@ function card(q, actions, feat) {
 function render() {
   if (!data) return;
   $('pre').checked = data.premoderation;
+  $('maxLen').min = data.minMaxLen; $('maxLen').max = data.maxMaxLen;
+  if (document.activeElement !== $('maxLen')) $('maxLen').value = data.maxLen; // don't overwrite while typing
   $('conn').textContent = data.connected + ' device(s) connected';
   const Q = data.questions;
   const pend = Q.filter((q) => q.status === 'pending').sort((a, b) => a.ts - b.ts);
@@ -192,6 +197,13 @@ $('pc').onclick = async () => {
 $('expP').onclick = (e) => { e.preventDefault(); location.href = '/api/mod/export-polls.csv?key=' + encodeURIComponent(key); };
 
 async function refresh() { data = await api('/api/mod/questions'); render(); renderPolls(); }
+function mlNote(text, color) { const s = $('mlMsg'); s.textContent = text; s.style.color = color; clearTimeout(mlNote.t); mlNote.t = setTimeout(() => { s.textContent = ''; }, 3000); }
+$('maxLen').onchange = async () => {
+  const n = Number($('maxLen').value), lo = Number($('maxLen').min), hi = Number($('maxLen').max);
+  if (!Number.isInteger(n) || n < lo || n > hi) { mlNote('Enter a whole number between ' + lo + ' and ' + hi, 'var(--bad)'); $('maxLen').value = data.maxLen; return; }
+  try { const r = await api('/api/mod/settings', { maxLen: n }); if (r.error) throw new Error(r.error); mlNote('✓ saved: ' + n, 'var(--ok)'); $('maxLen').blur(); refresh(); }
+  catch (e) { mlNote('Not saved', 'var(--bad)'); $('maxLen').value = data.maxLen; }
+};
 $('pre').onchange = async () => { await api('/api/mod/settings', { premoderation: $('pre').checked }); refresh(); };
 $('sPop').onclick = () => { sort = 'pop'; $('sPop').className = 'on'; $('sNew').className = ''; render(); };
 $('sNew').onclick = () => { sort = 'new'; $('sNew').className = 'on'; $('sPop').className = ''; render(); };

@@ -60,12 +60,12 @@
 <main><div id="poll"></div><div id="list"></div></main>
 <form id="f" autocomplete="off">
   <div class="in">
-    <textarea id="text" maxlength="300"></textarea>
+    <textarea id="text"></textarea>
     <div class="row">
       <input type="text" id="name" maxlength="40">
       <button class="send" id="send" type="submit"></button>
     </div>
-    <div class="count" id="cnt"></div>
+    <div class="count" id="cnt">0/300</div>
   </div>
 </form>
 <div id="toast"></div>
@@ -74,11 +74,13 @@ const L = {
   fr: { title:'Questions à l’intervenant', pop:'Populaires', recent:'Récentes', ph:'Posez votre question…', name:'Votre nom (facultatif)', send:'Envoyer',
         votes:'votes', vote:'Voter', empty:'Aucune question pour l’instant. Soyez le premier !', answered:'Répondue', anon:'Anonyme',
         sentPending:'Merci ! Votre question apparaîtra après validation.', sentLive:'Merci ! Votre question est en ligne.', fast:'Un instant avant la prochaine question.', err:'Erreur, réessayez.',
+        tooLong:'question trop longue, raccourcissez-la',
         poll:'Sondage', pollMulti:'Plusieurs réponses possibles : touchez pour cocher ou décocher, puis validez. Vous pouvez modifier votre vote tant que le sondage est ouvert.', pollSingle:'Touchez une réponse pour voter. Vous pouvez changer.', pollClosed:'Vote terminé', pollSubmit:'Valider mon vote', pollSaved:'Vote enregistré',
         pollThanks:'Merci ! Les résultats seront affichés par l’animateur.', pollNote:'Pourcentages calculés sur l’ensemble des réponses données (plusieurs réponses possibles par personne).' },
   en: { title:'Ask the speakers', pop:'Popular', recent:'Recent', ph:'Ask your question…', name:'Your name (optional)', send:'Send',
         votes:'votes', vote:'Vote', empty:'No questions yet. Be the first!', answered:'Answered', anon:'Anonymous',
         sentPending:'Thanks! Your question will appear once approved.', sentLive:'Thanks! Your question is live.', fast:'Please wait a moment before the next question.', err:'Error, please retry.',
+        tooLong:'too long, please shorten it',
         poll:'Poll', pollMulti:'Several answers allowed: tap to tick or untick, then submit. You can change your vote while the poll is open.', pollSingle:'Tap an answer to vote. You can change it.', pollClosed:'Voting closed', pollSubmit:'Submit my vote', pollSaved:'Vote saved',
         pollThanks:'Thanks! The host will show the results.', pollNote:'Percentages are based on all answers given (each person could choose several).' },
 };
@@ -201,6 +203,7 @@ async function load() {
   try {
     const r = await fetch('/api/questions?v=' + encodeURIComponent(voterId), { cache: 'no-store' });
     const j = await r.json(); data = j.questions; poll = j.poll; render(); renderPoll();
+    if (j.maxLen && j.maxLen !== maxLen) applyMax(j.maxLen);
   } catch (e) {}
 }
 
@@ -213,7 +216,19 @@ async function vote(q) {
 
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3200); }
 
-$('text').addEventListener('input', () => { $('cnt').textContent = $('text').value.length + '/300'; });
+// Question length limit: set by the moderator (can change during the session). Typing stops at the limit;
+// the server enforces it too. If the limit drops below what someone already typed, their text is kept
+// (not deleted) but Send is disabled until they shorten it.
+let maxLen = 300;
+function updateCount() {
+  const n = $('text').value.length, over = n > maxLen;
+  $('cnt').textContent = n + '/' + maxLen + (over ? ' · ' + T.tooLong : '');
+  $('cnt').style.color = n >= maxLen ? '#c43b3b' : '';
+  $('send').disabled = over;
+}
+function applyMax(n) { maxLen = n; $('text').maxLength = n; updateCount(); }
+applyMax(300);
+$('text').addEventListener('input', updateCount);
 try { $('name').value = localStorage.getItem('qa_name') || ''; } catch (e) {}
 
 $('f').addEventListener('submit', async (e) => {
@@ -225,10 +240,14 @@ $('f').addEventListener('submit', async (e) => {
   try {
     const r = await fetch('/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, name, voterId }) });
     if (r.status === 429) toast(T.fast);
+    else if (r.status === 400) {
+      const j = await r.json().catch(() => ({}));
+      if (j.error === 'too_long') { applyMax(j.max); toast(T.tooLong + ' (' + j.length + '/' + j.max + ')'); } else toast(T.err);
+    }
     else if (!r.ok) toast(T.err);
-    else { const j = await r.json(); $('text').value = ''; $('cnt').textContent = ''; toast(j.status === 'pending' ? T.sentPending : T.sentLive); load(); }
+    else { const j = await r.json(); $('text').value = ''; updateCount(); toast(j.status === 'pending' ? T.sentPending : T.sentLive); load(); }
   } catch (err) { toast(T.err); }
-  $('send').disabled = false;
+  updateCount(); // re-enables Send unless the text is over the limit
 });
 
 load();

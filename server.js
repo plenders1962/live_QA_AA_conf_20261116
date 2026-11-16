@@ -8,17 +8,20 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const MOD_PASSWORD = process.env.MOD_PASSWORD || 'changeme';
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
-const MAX_LEN = 300;
+const DEFAULT_MAX_LEN = 300; // audience question length limit; the moderator can change it live (state.maxLen)
+const MIN_MAX_LEN = 20;
+const MAX_MAX_LEN = 1000;
 const MAX_NAME = 40;
 const MIN_INTERVAL_MS = Number(process.env.MIN_INTERVAL_MS || 8000); // per-voter delay between questions
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // ---------- state ----------
-let state = { premoderation: true, featuredId: null, questions: [], polls: [], livePollId: null, showResults: false };
+let state = { premoderation: true, featuredId: null, questions: [], polls: [], livePollId: null, showResults: false, maxLen: DEFAULT_MAX_LEN };
 try {
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   if (raw && Array.isArray(raw.questions)) state = Object.assign(state, raw);
 } catch (e) { /* first run */ }
+if (!Number.isInteger(state.maxLen) || state.maxLen < MIN_MAX_LEN || state.maxLen > MAX_MAX_LEN) state.maxLen = DEFAULT_MAX_LEN;
 
 let saveTimer = null;
 function save() {
@@ -66,8 +69,10 @@ function isMod(req, url) {
   const key = req.headers['x-mod-key'] || url.searchParams.get('key') || '';
   return safeEq(key, MOD_PASSWORD);
 }
+// Normalises whitespace/control characters. Truncates only if `max` is given.
 function clean(s, max) {
-  return String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  const t = String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return max === undefined ? t : t.slice(0, max);
 }
 function pub(q, voterId) {
   return {
@@ -128,7 +133,7 @@ async function handle(req, res) {
   if (p === '/api/questions' && req.method === 'GET') {
     const v = clean(url.searchParams.get('v'), 64);
     const list = state.questions.filter((q) => q.status === 'approved').map((q) => pub(q, v));
-    return json(res, 200, { premoderation: state.premoderation, featuredId: state.featuredId, questions: list, poll: livePoll(v) });
+    return json(res, 200, { premoderation: state.premoderation, featuredId: state.featuredId, questions: list, poll: livePoll(v), maxLen: state.maxLen });
   }
 
   if (p === '/api/poll/vote' && req.method === 'POST') {
@@ -149,8 +154,9 @@ async function handle(req, res) {
   if (p === '/api/questions' && req.method === 'POST') {
     const b = await readBody(req);
     const voterId = clean(b.voterId, 64);
-    const text = clean(b.text, MAX_LEN);
+    const text = clean(b.text); // no truncation: a question that is too long is refused, not silently cut
     if (!voterId || text.length < 3) return json(res, 400, { error: 'invalid' });
+    if (text.length > state.maxLen) return json(res, 400, { error: 'too_long', max: state.maxLen, length: text.length });
     const now = Date.now();
     if (now - (lastSubmit.get(voterId) || 0) < MIN_INTERVAL_MS) return json(res, 429, { error: 'too_fast' });
     lastSubmit.set(voterId, now);
@@ -184,6 +190,7 @@ async function handle(req, res) {
         premoderation: state.premoderation, featuredId: state.featuredId, connected: clients.size,
         questions: state.questions.map(modView),
         polls: state.polls.map((x) => pubPoll(x, null, false)), livePollId: state.livePollId, showResults: state.showResults,
+        maxLen: state.maxLen, minMaxLen: MIN_MAX_LEN, maxMaxLen: MAX_MAX_LEN,
       });
     }
     if (p === '/api/mod/export-polls.csv' && req.method === 'GET') {
@@ -228,8 +235,13 @@ async function handle(req, res) {
     }
     if (p === '/api/mod/settings' && req.method === 'POST') {
       if (typeof b.premoderation === 'boolean') state.premoderation = b.premoderation;
+      if (b.maxLen !== undefined) {
+        const n = Number(b.maxLen);
+        if (!Number.isInteger(n) || n < MIN_MAX_LEN || n > MAX_MAX_LEN) return json(res, 400, { error: 'invalid_max_len', min: MIN_MAX_LEN, max: MAX_MAX_LEN });
+        state.maxLen = n; // questions already posted are left untouched
+      }
       save(); broadcast();
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, maxLen: state.maxLen });
     }
     if (p === '/api/mod/poll/create' && req.method === 'POST') {
       const question = clean(b.question, 200);
@@ -267,7 +279,7 @@ async function handle(req, res) {
       return json(res, 200, { ok: true });
     }
     if (p === '/api/mod/add' && req.method === 'POST') {
-      const text = clean(b.text, MAX_LEN);
+      const text = clean(b.text, MAX_MAX_LEN); // the moderator is not bound by the audience limit
       if (text.length < 3) return json(res, 400, { error: 'invalid' });
       state.questions.push({
         id: crypto.randomBytes(5).toString('hex'), text, name: clean(b.name, MAX_NAME), ts: Date.now(),

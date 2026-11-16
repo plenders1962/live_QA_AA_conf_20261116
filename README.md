@@ -21,6 +21,8 @@ Language: French or English automatically from the phone's language. Force with 
 
 Projector options: `/screen?sort=time` (newest first instead of most votes), `/screen?n=4` (number of questions shown, default 6), `/screen?url=https://short.link/x` (join address shown on screen).
 
+**Maximum question length.** The field *Max question length* in the top bar of `/mod` (default 300, allowed 20 to 1000) can be changed at any time during the session. Phones show a counter such as `87/200` and typing stops at the limit; the server also refuses any longer question, even if the page is bypassed. Questions already posted are never altered, and text someone is currently typing is kept (Send is just disabled until they shorten it). Questions you add yourself from `/mod` are not bound by the limit.
+
 By default new questions are held in the **Pending** queue until you approve them. Untick "Approve questions before they appear" on `/mod` to let everything through and remove problems afterwards.
 
 ---
